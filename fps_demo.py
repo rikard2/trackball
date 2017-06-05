@@ -20,7 +20,7 @@ args = vars(ap.parse_args())
 
 # grab a pointer to the video stream and initialize the FPS counter
 print("[INFO] sampling frames from webcam...")
-stream = cv2.VideoCapture(0)
+stream = cv2.VideoCapture('rally2.mpg')
 fps = FPS().start()
 
 # loop over some frames
@@ -59,7 +59,8 @@ while fps._numFrames < args["num_frames"]:
 	# to have a maximum width of 400 pixels
 	frame = vs.read()
 	#frame = imutils.resize(frame, width=400)
-
+        frame = cv2.GaussianBlur(frame, (5, 5), 0)
+        frame = cv2.Canny(frame, 100, 100)
 	# check to see if the frame should be displayed to our screen
 	if args["display"] > 0:
 		cv2.imshow("Frame", frame)
