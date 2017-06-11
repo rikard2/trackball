@@ -125,6 +125,7 @@ int main()
         return EXIT_FAILURE;
     }
 
+    cap.set(CV_CAP_PROP_POS_MSEC, 0); // Position in milliseconds
     cap.set(CV_CAP_PROP_FRAME_WIDTH, 854);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
 
@@ -263,8 +264,10 @@ int main()
             if (sameGoal) box = combineBoxes(box, mergeBox);
             if (box.height > 70 && box.width < 15) { // Have the rectangles the size of a goal?
                 // Make the goal rect bigger to have a more accurate hitbox.
-                box.x -= (box.x < 427) ? 50 : 0;
+                box.x -= (box.x < 427) ? 60 : -10;
                 box.width += 50;
+                box.y -= 20;
+                box.height += 40;
 
                 actualGoals.push_back(box);
             }
@@ -377,7 +380,7 @@ int main()
             cv::rectangle(res, actualGoals[i], CV_RGB(255,0,0), 2);
             if (actualGoals[i].contains(cv::Point(state.at<float>(0), state.at<float>(1)))) {
                 cout << "GOAL ???" << endl;
-                potentialGoalHome = actualGoals[i].x < 427; // HOME = LEFT GOAL
+                potentialGoalHome = actualGoals[i].x > 427; // HOME POINT = SCORE ON THE RIGHT GOAL
                 potentialGoal = true;
                 lastGoalFrame = frames;
             }
