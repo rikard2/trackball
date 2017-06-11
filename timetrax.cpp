@@ -35,6 +35,22 @@ struct score_t {
     int away;
 } score;
 
+cv::Rect combineBoxes(cv::Rect box1, cv::Rect box2) {
+    int x = min(box1.x, box2.x);
+    int width = max(box1.width, box2.width);
+    int y = min(box1.y, box2.y);
+    int maxY = max(box1.height + box1.y, box2.height + box2.y);
+    int height = maxY - y;
+    cv::Rect newBox(x, y, width, height);
+    return newBox;
+}
+void displayScore(cv::Mat frame, score_t score) {
+    stringstream sstr;
+        sstr << score.home << " - " << score.away;
+        cv::putText(frame, sstr.str(), cv::Point(10, 20),
+            cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv::Scalar(0,255,0), 1, CV_AA);
+}
+
 int main()
 {
     // Set up score
@@ -204,9 +220,10 @@ int main()
         vector<vector<cv::Point> > contours;
         cv::findContours(rangeRes, contours, CV_RETR_EXTERNAL,
                          CV_CHAIN_APPROX_NONE);
+        // <<<<< Find contours
 
-
-        // Find potential goals
+        // >>>>> Find goals
+        // Goals are black
         vector<vector<cv::Point> > blackContours;
         cv::findContours(blackRangeRes, blackContours, CV_RETR_EXTERNAL,
                          CV_CHAIN_APPROX_NONE);
@@ -220,11 +237,13 @@ int main()
             }
         }
 
+        // Sometimes the goalie is in the way of the goal, giving us two
+        // rectangles, so they need to be merged.
         vector<cv::Rect> actualGoals;
         for (size_t i = 0; i < potentialGoals.size(); i++) {
             cv::Rect box = potentialGoals[i];
             cv::Rect mergeBox;
-            bool same = false;
+            bool sameGoal = false;
             for (size_t x = 0; x < potentialGoals.size(); x++) {
                 if (i != x) { // Don't match the same
                     int threshold = 100;
@@ -235,31 +254,22 @@ int main()
                         && potentialGoals[i].x < potentialGoals[x].x + threshold_x)
                     {
                         mergeBox = potentialGoals[x];
-                        same = true;
+                        sameGoal = true;
                         break;
                     }
                 }
 
             }
-            if (same)
-            {
-                int x = min(box.x, mergeBox.x);
-                int width = max(box.width, mergeBox.width);
-                int y = min(box.y, mergeBox.y);
-                int maxY = max(box.height + box.y, mergeBox.height + mergeBox.y);
-                int height = maxY - y;
-                cv::Rect newBox(x, y, width, height);
-                box = newBox;
-            }
-            if (box.height > 70 && box.width < 15) {
-                if (box.x < 427) box.x -= 50;
+            if (sameGoal) box = combineBoxes(box, mergeBox);
+            if (box.height > 70 && box.width < 15) { // Have the rectangles the size of a goal?
+                // Make the goal rect bigger to have a more accurate hitbox.
+                box.x -= (box.x < 427) ? 50 : 0;
                 box.width += 50;
 
                 actualGoals.push_back(box);
             }
         }
-
-        // <<<<< Find contours
+        // <<<<< Find goals
 
         // >>>>> Filtering
         vector<vector<cv::Point> > balls;
@@ -283,11 +293,8 @@ int main()
         }
         // <<<<< Filtering
 
-        //cout << "Sendballs:" << ballsBox.size() << endl;
         cv::Rect goal(763,195, 45,100); // x, y, width, height
         cv::Rect goal2(85,195, 45,100);
-        //cv::rectangle(res, goal, CV_RGB(0,0,255), 2);
-        //cv::rectangle(res, goal2, CV_RGB(0,0,255), 2);
 
         // >>>>> Detection result
         for (size_t i = 0; i < balls.size(); i++)
@@ -307,13 +314,7 @@ int main()
             //         cv::FONT_HERSHEY_COMPLEX_SMALL, 1, CV_RGB(0,255,0), 2);
 
         }
-        if (balls.size() > 0) {
-            lastSeenBallFrame = frames;
-        }
-        stringstream sstr;
-        sstr << score.home << " - " << score.away;
-        cv::putText(res, sstr.str(), cv::Point(10, 20),
-            cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv::Scalar(0,255,0), 1, CV_AA);
+        if (balls.size() > 0) lastSeenBallFrame = frames;
 
         // <<<<< Detection result
 
@@ -371,6 +372,7 @@ int main()
         long now = time(0);
 
 
+        // If the ball is inside the goal rect, there is a potential goal.
         for (size_t i = 0; i < actualGoals.size(); i++) {
             cv::rectangle(res, actualGoals[i], CV_RGB(255,0,0), 2);
             if (actualGoals[i].contains(cv::Point(state.at<float>(0), state.at<float>(1)))) {
@@ -381,6 +383,8 @@ int main()
             }
         }
 
+        // When there is a potential goal, only count it as a real goal if we don't
+        // see the ball 30 frames later.
         if (frames > (lastSeenBallFrame + 30)) { // 30 frames since last seen ball
             if (potentialGoal) {
                 cout << "REALLY GOAL!!!" << endl;
@@ -394,6 +398,7 @@ int main()
                 }
             }
         } else {
+            // If we see a the ball 5 frames later, it probably wasn't a goal...
             if (lastSeenBallFrame > (lastGoalFrame + 5))
             {
                 potentialGoal = false;
@@ -401,8 +406,8 @@ int main()
             }
         }
 
+        displayScore(res, score);
         cv::imshow("Tracking", res);
-        //cv::imshow("Black", blackRangeRes);
         frames++;
 
         ch = cv::waitKey(1);
