@@ -30,8 +30,16 @@
 
 using namespace std;
 
+struct score_t {
+    int home;
+    int away;
+} score;
+
 int main()
 {
+    // Set up score
+    score.home = score.away = 0;
+
     // Camera frame
     cv::Mat frame;
 
@@ -113,6 +121,11 @@ int main()
 
     int notFoundCount = 0;
 
+    int frames = 0;
+    int lastSeenBallFrame = 0;
+    int lastGoalFrame = 0;
+    bool potentialGoal = false;
+    bool potentialGoalHome = false;
     // >>>>> Main loop
     while (ch != 'q' && ch != 'Q')
     {
@@ -173,7 +186,11 @@ int main()
         // >>>>> Color Thresholding (find sendball)
         cv::Mat rangeRes = cv::Mat::zeros(frame.size(), CV_8UC1);
         cv::inRange(frmHsv, cv::Scalar(0, 130, 130),
-                    cv::Scalar(15, 255, 255), rangeRes);
+            cv::Scalar(15, 255, 255), rangeRes);
+
+        cv::Mat blackRangeRes = cv::Mat::zeros(frame.size(), CV_8UC1);
+        cv::inRange(frmHsv, cv::Scalar(0, 0, 0),
+            cv::Scalar(255, 255, 37), blackRangeRes);
         // <<<<< Color Thresholding (find sendball)
 
         // >>>>> Improve result
@@ -187,6 +204,61 @@ int main()
         vector<vector<cv::Point> > contours;
         cv::findContours(rangeRes, contours, CV_RETR_EXTERNAL,
                          CV_CHAIN_APPROX_NONE);
+
+
+        // Find potential goals
+        vector<vector<cv::Point> > blackContours;
+        cv::findContours(blackRangeRes, blackContours, CV_RETR_EXTERNAL,
+                         CV_CHAIN_APPROX_NONE);
+
+        vector<cv::Rect> potentialGoals;
+        for (size_t i = 0; i < blackContours.size(); i++)
+        {
+            cv::Rect bBox = cv::boundingRect(blackContours[i]);
+            if (bBox.width < 10 and bBox.width > 2) {
+                potentialGoals.push_back(bBox);
+            }
+        }
+
+        vector<cv::Rect> actualGoals;
+        for (size_t i = 0; i < potentialGoals.size(); i++) {
+            cv::Rect box = potentialGoals[i];
+            cv::Rect mergeBox;
+            bool same = false;
+            for (size_t x = 0; x < potentialGoals.size(); x++) {
+                if (i != x) { // Don't match the same
+                    int threshold = 100;
+                    int threshold_x = 15;
+                    if (   potentialGoals[i].y > potentialGoals[x].y - threshold
+                        && potentialGoals[i].y < potentialGoals[x].y + threshold
+                        && potentialGoals[i].x > potentialGoals[x].x - threshold_x
+                        && potentialGoals[i].x < potentialGoals[x].x + threshold_x)
+                    {
+                        mergeBox = potentialGoals[x];
+                        same = true;
+                        break;
+                    }
+                }
+
+            }
+            if (same)
+            {
+                int x = min(box.x, mergeBox.x);
+                int width = max(box.width, mergeBox.width);
+                int y = min(box.y, mergeBox.y);
+                int maxY = max(box.height + box.y, mergeBox.height + mergeBox.y);
+                int height = maxY - y;
+                cv::Rect newBox(x, y, width, height);
+                box = newBox;
+            }
+            if (box.height > 70 && box.width < 15) {
+                if (box.x < 427) box.x -= 50;
+                box.width += 50;
+
+                actualGoals.push_back(box);
+            }
+        }
+
         // <<<<< Find contours
 
         // >>>>> Filtering
@@ -196,6 +268,7 @@ int main()
         {
             cv::Rect bBox;
             bBox = cv::boundingRect(contours[i]);
+            //bCircle = cv::boundingCircle(contours[i]);
 
             float ratio = (float) bBox.width / (float) bBox.height;
             if (ratio > 1.0f)
@@ -213,8 +286,8 @@ int main()
         //cout << "Sendballs:" << ballsBox.size() << endl;
         cv::Rect goal(763,195, 45,100); // x, y, width, height
         cv::Rect goal2(85,195, 45,100);
-        cv::rectangle(res, goal, CV_RGB(0,0,255), 2);
-        cv::rectangle(res, goal2, CV_RGB(0,0,255), 2);
+        //cv::rectangle(res, goal, CV_RGB(0,0,255), 2);
+        //cv::rectangle(res, goal2, CV_RGB(0,0,255), 2);
 
         // >>>>> Detection result
         for (size_t i = 0; i < balls.size(); i++)
@@ -234,6 +307,14 @@ int main()
             //         cv::FONT_HERSHEY_COMPLEX_SMALL, 1, CV_RGB(0,255,0), 2);
 
         }
+        if (balls.size() > 0) {
+            lastSeenBallFrame = frames;
+        }
+        stringstream sstr;
+        sstr << score.home << " - " << score.away;
+        cv::putText(res, sstr.str(), cv::Point(10, 20),
+            cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv::Scalar(0,255,0), 1, CV_AA);
+
         // <<<<< Detection result
 
         // >>>>> Kalman Update
@@ -287,14 +368,42 @@ int main()
         // <<<<< kalman update
 
         // Check if ball is sent to goal
-        if (goal.contains(cv::Point(state.at<float>(0), state.at<float>(1)))) {
-               cout << "HANNES GJORDE MÅÅÅL!" << endl;
+        long now = time(0);
+
+
+        for (size_t i = 0; i < actualGoals.size(); i++) {
+            cv::rectangle(res, actualGoals[i], CV_RGB(255,0,0), 2);
+            if (actualGoals[i].contains(cv::Point(state.at<float>(0), state.at<float>(1)))) {
+                cout << "GOAL ???" << endl;
+                potentialGoalHome = actualGoals[i].x < 427; // HOME = LEFT GOAL
+                potentialGoal = true;
+                lastGoalFrame = frames;
             }
-         if (goal2.contains(cv::Point(state.at<float>(0), state.at<float>(1)))) {
-               cout << "REZEK GJORDE MÅÅÅL!" << endl;
+        }
+
+        if (frames > (lastSeenBallFrame + 30)) { // 30 frames since last seen ball
+            if (potentialGoal) {
+                cout << "REALLY GOAL!!!" << endl;
+                potentialGoal = false;
+                lastGoalFrame = 0;
+
+                if (potentialGoalHome) {
+                    score.home += 1;
+                } else {
+                    score.away += 1;
+                }
             }
+        } else {
+            if (lastSeenBallFrame > (lastGoalFrame + 5))
+            {
+                potentialGoal = false;
+                lastGoalFrame = 0;
+            }
+        }
 
         cv::imshow("Tracking", res);
+        //cv::imshow("Black", blackRangeRes);
+        frames++;
 
         ch = cv::waitKey(1);
     }
