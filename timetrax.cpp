@@ -119,7 +119,7 @@ int main()
     cv::VideoCapture cap;
 
     // >>>>> Setup shit
-    if (!cap.open("klonk2.mp4"))
+    if (!cap.open("videos/klonk2.mp4"))
     {
         cout << "Webcam not connected.\n" << "Please verify\n";
         return EXIT_FAILURE;
