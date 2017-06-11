@@ -153,6 +153,7 @@ int main()
 
         // Get a frame
         cap >> frame;
+        if (frame.empty()) break;
 
         cv::resize(frame, frame, cv::Size(854, 480));
 
@@ -416,5 +417,6 @@ int main()
         ch = cv::waitKey(1);
     }
 
+    cout << "Video ended." << endl;
     return EXIT_SUCCESS;
 }
