@@ -119,7 +119,7 @@ int main()
     cv::VideoCapture cap;
 
     // >>>>> Setup shit
-    if (!cap.open("videos/klonk2.mp4"))
+    if (!cap.open("videos/klonk1.mp4"))
     {
         cout << "Webcam not connected.\n" << "Please verify\n";
         return EXIT_FAILURE;
@@ -144,6 +144,10 @@ int main()
     bool potentialGoal = false;
     bool potentialGoalHome = false;
     // >>>>> Main loop
+
+    double lastshot = 0;
+    bool shot = false;
+    bool blueshot = false;
     while (ch != 'q' && ch != 'Q')
     {
         double precTick = ticks;
@@ -167,8 +171,35 @@ int main()
             kf.transitionMatrix.at<float>(9) = dT;
             // <<<< Matrix A
 
-            //cout << "dT:" << endl << dT << endl;
             state = kf.predict();
+
+            // <<<<< Detect shot
+            if (abs(state.at<float>(2)) >= 250 && !shot && ticks-lastshot > 1000000000 * 1.7){
+                if (state.at<float>(2) > 0){
+                    cout << "BLUE SHOT!" << endl;
+                    blueshot = true;
+                }else{
+                    cout << "WHITE SHOT!" << endl;
+                    blueshot = false;
+                }
+                shot = true;
+                lastshot = ticks;
+            }
+            if(abs(state.at<float>(2)) < 100 && shot)
+                shot=false;
+
+            if (shot && blueshot){
+                cv::putText(res, "BLUE POWERSHOT!",
+                        cv::Point(250, 50),
+                        cv::FONT_HERSHEY_COMPLEX_SMALL, 2, cv::Scalar(255, 0, 0), 5);
+            }
+            if (shot && !blueshot){
+                cv::putText(res, "WHITE POWERSHOT!",
+                        cv::Point(250, 50),
+                        cv::FONT_HERSHEY_COMPLEX_SMALL, 2, cv::Scalar(255, 255, 255), 5);
+            }
+            // >>>>> Detect shot
+
             //cout << "State post:" << endl << state << endl;
 
             cv::Rect predRect;
@@ -304,7 +335,15 @@ int main()
         for (size_t i = 0; i < balls.size(); i++)
         {
             cv::drawContours(res, balls, i, CV_RGB(20,150,20), 1);
-            cv::rectangle(res, ballsBox[i], CV_RGB(0,255,0), 2);
+            cv::Scalar color = cv::Scalar(0, 255, 0);
+
+            if (shot && blueshot){
+                color = cv::Scalar(255, 0, 0);
+            }
+            if (shot && !blueshot){
+                color = cv::Scalar(255, 255, 255);
+            }
+            cv::rectangle(res, ballsBox[i], color, 2);
 
             cv::Point center;
             center.x = ballsBox[i].x + ballsBox[i].width / 2;
